@@ -58,10 +58,52 @@ const mockData = {
   ]
 };
 
+function normalizeResult(rawResult) {
+  const safe = rawResult && typeof rawResult === 'object' ? rawResult : {};
+  const retention = safe.retention || {};
+  const weakSegments = Array.isArray(retention.weak_segments) ? retention.weak_segments : [];
+  const suggestions = Array.isArray(safe.suggestions) ? safe.suggestions : [];
+  const retentionCurve = Array.isArray(retention.retention_curve) ? retention.retention_curve : [];
+  const motionData = Array.isArray(safe.video?.motion_scores)
+    ? safe.video.motion_scores.map((item) => ({
+        timestamp: Number(item.timestamp) || 0,
+        motion: Number(item.motion_intensity) || 0,
+      }))
+    : [];
+
+  const summary = weakSegments.length
+    ? `Detected ${weakSegments.length} weak segment${weakSegments.length === 1 ? '' : 's'} with predicted drop-off risk.`
+    : 'No major weak segments detected.';
+
+  const fallbackSuggestions = weakSegments.slice(0, 3).map((segment) => ({
+    timestamp_start: Number(segment.start) || 0,
+    timestamp_end: Number(segment.end) || 0,
+    issue: 'Predicted audience drop-off',
+    fix: 'Tighten pacing and add stronger visual or audio variation in this section.',
+    priority: segment.severity === 'critical' || segment.severity === 'severe' ? 'High' : 'Medium',
+  }));
+
+  return {
+    overall_score: Number(retention.vpq_score) || 0,
+    summary,
+    retention_curve: retentionCurve.map((point) => ({
+      time: Number(point.time) || 0,
+      retention: Number(point.retention) || 0,
+    })),
+    weak_segments: weakSegments.map((segment) => ({
+      ...segment,
+      start: Number(segment.start) || 0,
+      end: Number(segment.end) || 0,
+    })),
+    suggestions: suggestions.length ? suggestions : fallbackSuggestions,
+    motion_data: motionData,
+  };
+}
+
 function App() {
   const [screen, setScreen] = useState('idle');
   const [jobId, setJobId] = useState(null);
-  const [resultData, setResultData] = useState(mockData);
+  const [resultData, setResultData] = useState(null);
   const [trackingJobId, setTrackingJobId] = useState('');
   const [searchError, setSearchError] = useState('');
 
@@ -71,7 +113,7 @@ function App() {
   };
 
   const handleProcessingComplete = (data) => {
-    setResultData(data);
+    setResultData(normalizeResult(data));
     setScreen('results');
   };
 
