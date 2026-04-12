@@ -1,0 +1,36 @@
+# Local test videos
+Train_reel.mp4
+BACKEND/Train_reel*.mp4
+
+# Generated analysis output
+BACKEND/uploads/
+
+# Local database files
+BACKEND/jobs.db
+*.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# Node / Vite
+FRONTEND/node_modules/
+FRONTEND/dist/
+FRONTEND/.vite/
+
+# Logs
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
