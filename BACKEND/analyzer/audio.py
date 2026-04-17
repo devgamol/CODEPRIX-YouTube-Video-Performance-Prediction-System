@@ -11,14 +11,7 @@ import whisper
 
 from config import NO_SPEECH_PROB_THRESHOLD, WHISPER_MODEL
 
-_WHISPER_MODEL = None
-
-
-def _get_whisper_model():
-    global _WHISPER_MODEL
-    if _WHISPER_MODEL is None:
-        _WHISPER_MODEL = whisper.load_model(WHISPER_MODEL)
-    return _WHISPER_MODEL
+whisper_model = whisper.load_model(WHISPER_MODEL)
 
 
 def analyze_audio(video_path: str, job_id: str) -> dict:
@@ -73,8 +66,7 @@ def analyze_audio(video_path: str, job_id: str) -> dict:
 
         energy_map = {int(item["timestamp"]): float(item["energy"]) for item in energy_curve}
 
-        model = _get_whisper_model()
-        result = model.transcribe(audio_path)
+        result = whisper_model.transcribe(audio_path)
 
         raw_segments = result.get("segments", [])
 

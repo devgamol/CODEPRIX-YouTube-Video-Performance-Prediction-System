@@ -61,8 +61,14 @@ const mockData = {
 function normalizeResult(rawResult) {
   const safe = rawResult && typeof rawResult === 'object' ? rawResult : {};
   const retention = safe.retention || {};
+  const suggestionsPayload =
+    safe.suggestions && typeof safe.suggestions === 'object' ? safe.suggestions : {};
   const weakSegments = Array.isArray(retention.weak_segments) ? retention.weak_segments : [];
-  const suggestions = Array.isArray(safe.suggestions) ? safe.suggestions : [];
+  const suggestions = Array.isArray(suggestionsPayload.suggestions)
+    ? suggestionsPayload.suggestions
+    : Array.isArray(safe.suggestions)
+    ? safe.suggestions
+    : [];
   const retentionCurve = Array.isArray(retention.retention_curve) ? retention.retention_curve : [];
   const motionData = Array.isArray(safe.video?.motion_scores)
     ? safe.video.motion_scores.map((item) => ({
@@ -71,9 +77,13 @@ function normalizeResult(rawResult) {
       }))
     : [];
 
-  const summary = weakSegments.length
+  const fallbackSummary = weakSegments.length
     ? `Detected ${weakSegments.length} weak segment${weakSegments.length === 1 ? '' : 's'} with predicted drop-off risk.`
     : 'No major weak segments detected.';
+  const summary =
+    typeof suggestionsPayload.summary === 'string' && suggestionsPayload.summary.trim()
+      ? suggestionsPayload.summary
+      : fallbackSummary;
 
   const fallbackSuggestions = weakSegments.slice(0, 3).map((segment) => ({
     timestamp_start: Number(segment.start) || 0,
@@ -84,7 +94,7 @@ function normalizeResult(rawResult) {
   }));
 
   return {
-    overall_score: Number(retention.vpq_score) || 0,
+    overall_score: Number(suggestionsPayload.overall_score) || Number(retention.vpq_score) || 0,
     summary,
     retention_curve: retentionCurve.map((point) => ({
       time: Number(point.time) || 0,
