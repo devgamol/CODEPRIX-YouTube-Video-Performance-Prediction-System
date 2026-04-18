@@ -11,7 +11,19 @@ import whisper
 
 from config import NO_SPEECH_PROB_THRESHOLD, WHISPER_MODEL
 
-whisper_model = whisper.load_model(WHISPER_MODEL)
+try:
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+except Exception:
+    device = "cpu"
+
+try:
+    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+except Exception:
+    device = "cpu"
+    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+
+print(f"[Audio] Whisper using device: {device}")
 
 
 def analyze_audio(video_path: str, job_id: str) -> dict:
