@@ -1,11 +1,14 @@
 import numpy as np
 
 from config import (
+    BASE_RETENTION_DECAY,
     LONG_SCENE_PENALTY_WEIGHT,
     LOW_MOTION_PENALTY_WEIGHT,
     MOTION_LOW_THRESHOLD,
     NO_SPEECH_PROB_THRESHOLD,
     SILENCE_PENALTY_WEIGHT,
+    STRONG_RETENTION_THRESHOLD,
+    WEAK_RETENTION_THRESHOLD,
 )
 
 
@@ -146,6 +149,132 @@ def _apply_gaussian_smoothing(retention_curve):
     return retention_curve
 
 
+def _base_decay_for_duration(total_duration: float) -> float:
+    if total_duration <= 15.0:
+        return BASE_RETENTION_DECAY * 0.45
+    if total_duration <= 30.0:
+        return BASE_RETENTION_DECAY * 0.7
+    return BASE_RETENTION_DECAY
+
+
+def _pacing_score_for_duration(total_duration: float, cuts: int) -> float:
+    minutes = total_duration / 60.0 if total_duration > 0 else 0.0
+    if minutes <= 0:
+        return 100.0
+
+    cuts_per_min = float(cuts / minutes)
+
+    if total_duration <= 15.0:
+        target_cpm, tolerance = 2.0, 4.0
+    elif total_duration <= 30.0:
+        target_cpm, tolerance = 3.0, 4.0
+    elif total_duration <= 60.0:
+        target_cpm, tolerance = 4.0, 4.5
+    else:
+        target_cpm, tolerance = 5.0, 5.0
+
+    deviation = abs(cuts_per_min - target_cpm)
+    score = 100.0 - (deviation / tolerance) * 100.0
+    return max(0.0, min(100.0, score))
+
+
+def _vpq_weights_for_duration(total_duration: float):
+    if total_duration <= 15.0:
+        return {
+            "hook_score": 0.28,
+            "retention_score": 0.33,
+            "motion_score": 0.17,
+            "audio_score": 0.18,
+            "pacing_score": 0.04,
+        }
+    if total_duration <= 30.0:
+        return {
+            "hook_score": 0.27,
+            "retention_score": 0.32,
+            "motion_score": 0.16,
+            "audio_score": 0.18,
+            "pacing_score": 0.07,
+        }
+    return {
+        "hook_score": 0.25,
+        "retention_score": 0.30,
+        "motion_score": 0.15,
+        "audio_score": 0.20,
+        "pacing_score": 0.10,
+    }
+
+
+def _platform_profile(total_duration: float) -> str:
+    if total_duration <= 90.0:
+        return "reel"
+    if total_duration <= 180.0:
+        return "hybrid"
+    return "long"
+
+
+def _weak_threshold_for_duration(total_duration: float) -> float:
+    if total_duration <= 90.0:
+        return min(90.0, WEAK_RETENTION_THRESHOLD + 4.0)
+    if total_duration <= 180.0:
+        return min(88.0, WEAK_RETENTION_THRESHOLD + 2.0)
+    return WEAK_RETENTION_THRESHOLD
+
+
+def _strong_threshold_for_duration(total_duration: float) -> float:
+    if total_duration <= 90.0:
+        return max(80.0, STRONG_RETENTION_THRESHOLD + 2.0)
+    return STRONG_RETENTION_THRESHOLD
+
+
+def _relative_drop_threshold(total_duration: float) -> float:
+    if total_duration <= 90.0:
+        return 14.0
+    if total_duration <= 180.0:
+        return 18.0
+    return 22.0
+
+
+def _short_form_scores(total_duration: float, retention_curve, motion_lookup, energy_lookup):
+    if not retention_curve:
+        return {
+            "completion_score": 0.0,
+            "shareability_score": 0.0,
+            "replay_score": 0.0,
+        }
+
+    first_three = [float(p["retention"]) for p in retention_curve if int(p["time"]) <= 3]
+    hook = float(np.mean(first_three)) if first_three else float(retention_curve[0]["retention"])
+    completion = float(retention_curve[-1]["retention"])
+
+    motion_values = np.array(list(motion_lookup.values()), dtype=float) if motion_lookup else np.array([0.0], dtype=float)
+    energy_values = np.array(list(energy_lookup.values()), dtype=float) if energy_lookup else np.array([0.0], dtype=float)
+
+    high_motion_ratio = float(np.mean(motion_values > 0.55))
+    high_energy_ratio = float(np.mean(energy_values > 0.65))
+    energy_var = float(np.var(energy_values))
+    energy_var_score = max(0.0, min(100.0, (energy_var / 0.05) * 100.0))
+
+    shareability_score = (
+        0.45 * hook
+        + 0.20 * completion
+        + 0.15 * (high_motion_ratio * 100.0)
+        + 0.10 * (high_energy_ratio * 100.0)
+        + 0.10 * energy_var_score
+    )
+
+    tail_window = [float(p["retention"]) for p in retention_curve if int(p["time"]) >= max(0, int(total_duration) - 3)]
+    tail_retention = float(np.mean(tail_window)) if tail_window else completion
+    replay_score = 0.6 * completion + 0.4 * tail_retention
+    if total_duration <= 15.0 and completion >= 88.0:
+        replay_score += 5.0
+
+    return {
+        "completion_score": round(max(0.0, min(100.0, completion)), 3),
+        "shareability_score": round(max(0.0, min(100.0, shareability_score)), 3),
+        "replay_score": round(max(0.0, min(100.0, replay_score)), 3),
+    }
+
+
 def compute_retention_analysis(video_data, audio_data, features=None):
     total_duration = float(video_data.get("duration", 0.0))
     duration = int(total_duration)
@@ -220,6 +349,7 @@ def compute_retention_analysis(video_data, audio_data, features=None):
     retention = 100.0
     retention_curve = []
     prev_silent = False
+    base_decay = _base_decay_for_duration(total_duration)
 
     for sec in range(duration + 1):
         motion = float(motion_lookup[sec])
@@ -269,6 +399,8 @@ def compute_retention_analysis(video_data, audio_data, features=None):
         face_boost = 0.15 if face_lookup.get(sec, False) else 0.0
 
         total_penalty = (
+            base_decay
+            +
             silence_penalty
             + low_motion_penalty
             + long_scene_penalty
@@ -300,7 +432,19 @@ def compute_retention_analysis(video_data, audio_data, features=None):
 
     retention_curve = _apply_gaussian_smoothing(retention_curve)
 
-    weak_seconds = [int(p["time"]) for p in retention_curve if float(p["retention"]) < 70.0]
+    weak_threshold = _weak_threshold_for_duration(total_duration)
+    relative_drop_threshold = _relative_drop_threshold(total_duration)
+    early_window = [float(p["retention"]) for p in retention_curve if int(p["time"]) <= 3]
+    early_anchor = float(np.mean(early_window)) if early_window else 100.0
+
+    weak_seconds = []
+    for p in retention_curve:
+        sec = int(p["time"])
+        value = float(p["retention"])
+        rel_drop = early_anchor - value
+        if value < weak_threshold or rel_drop >= relative_drop_threshold:
+            weak_seconds.append(sec)
+
     weak_runs = _merge_runs_with_small_gaps(_build_runs(weak_seconds), gap_limit=5)
 
     weak_segments = []
@@ -328,7 +472,8 @@ def compute_retention_analysis(video_data, audio_data, features=None):
             }
         )
 
-    strong_seconds = [int(p["time"]) for p in retention_curve if float(p["retention"]) > 80.0]
+    strong_threshold = _strong_threshold_for_duration(total_duration)
+    strong_seconds = [int(p["time"]) for p in retention_curve if float(p["retention"]) > strong_threshold]
     strong_runs = _build_runs(strong_seconds)
 
     strong_segments = []
@@ -358,7 +503,8 @@ def compute_retention_analysis(video_data, audio_data, features=None):
     hook_score = float(np.mean(hook_values)) if hook_values else 0.0
 
     if len(retention_values) > 1:
-        auc = float(np.trapezoid(np.array(retention_values, dtype=float), dx=1.0))
+        trapz_fn = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+        auc = float(trapz_fn(np.array(retention_values, dtype=float), dx=1.0))
         max_auc = 100.0 * float(len(retention_values) - 1)
         retention_score = (auc / max_auc) * 100.0 if max_auc > 0 else 0.0
     elif retention_values:
@@ -371,9 +517,7 @@ def compute_retention_analysis(video_data, audio_data, features=None):
 
     scenes = video_data.get("scenes", [])
     cuts = max(0, len(scenes) - 1)
-    minutes = total_duration / 60.0 if total_duration > 0 else 0.0
-    cuts_per_min = float(cuts / minutes) if minutes > 0 else 0.0
-    pacing_score = max(0.0, 100.0 - (abs(cuts_per_min - 5.0) / 5.0) * 100.0)
+    pacing_score = _pacing_score_for_duration(total_duration, cuts)
 
     vpq_components = {
         "hook_score": round(max(0.0, min(100.0, hook_score)), 3),
@@ -383,13 +527,38 @@ def compute_retention_analysis(video_data, audio_data, features=None):
         "pacing_score": round(max(0.0, min(100.0, pacing_score)), 3),
     }
 
-    vpq_raw = (
-        0.25 * vpq_components["hook_score"]
-        + 0.30 * vpq_components["retention_score"]
-        + 0.15 * vpq_components["motion_score"]
-        + 0.20 * vpq_components["audio_score"]
-        + 0.10 * vpq_components["pacing_score"]
-    )
+    profile = _platform_profile(total_duration)
+    short_form = _short_form_scores(total_duration, retention_curve, motion_lookup, energy_lookup)
+    if profile in ("reel", "hybrid"):
+        vpq_components.update(short_form)
+
+    if profile == "reel":
+        vpq_weights = {
+            "hook_score": 0.22,
+            "retention_score": 0.20,
+            "motion_score": 0.14,
+            "audio_score": 0.14,
+            "pacing_score": 0.05,
+            "completion_score": 0.13,
+            "shareability_score": 0.08,
+            "replay_score": 0.04,
+        }
+    elif profile == "hybrid":
+        vpq_weights = {
+            "hook_score": 0.24,
+            "retention_score": 0.25,
+            "motion_score": 0.15,
+            "audio_score": 0.18,
+            "pacing_score": 0.08,
+            "completion_score": 0.07,
+            "shareability_score": 0.03,
+        }
+    else:
+        vpq_weights = _vpq_weights_for_duration(total_duration)
+
+    vpq_raw = 0.0
+    for key, weight in vpq_weights.items():
+        vpq_raw += weight * float(vpq_components.get(key, 0.0))
     vpq_score = int(round(max(0.0, min(100.0, vpq_raw))))
 
     speech_stats = audio_data.get("speech_stats", {}) if isinstance(audio_data, dict) else {}
@@ -408,12 +577,15 @@ def compute_retention_analysis(video_data, audio_data, features=None):
 
     analysis_metadata = {
         "total_duration": total_duration,
+        "platform_profile": profile,
         "total_seconds_analyzed": len(retention_curve),
         "weak_segment_count": len(weak_segments),
         "strong_segment_count": len(strong_segments),
         "predicted_average_retention": round(float(np.mean(retention_values)) if retention_values else 0.0, 3),
         "flat_delivery_detected": flat_delivery_detected,
         "presenter_heavy": presenter_heavy,
+        "weak_threshold": weak_threshold,
+        "relative_drop_threshold": relative_drop_threshold,
     }
 
     signal_weights = {

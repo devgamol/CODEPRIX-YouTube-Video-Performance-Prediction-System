@@ -11,14 +11,19 @@ import whisper
 
 from config import NO_SPEECH_PROB_THRESHOLD, WHISPER_MODEL
 
-_WHISPER_MODEL = None
+try:
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+except Exception:
+    device = "cpu"
 
+try:
+    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+except Exception:
+    device = "cpu"
+    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
 
-def _get_whisper_model():
-    global _WHISPER_MODEL
-    if _WHISPER_MODEL is None:
-        _WHISPER_MODEL = whisper.load_model(WHISPER_MODEL)
-    return _WHISPER_MODEL
+print(f"[Audio] Whisper using device: {device}")
 
 
 def analyze_audio(video_path: str, job_id: str) -> dict:
@@ -73,8 +78,7 @@ def analyze_audio(video_path: str, job_id: str) -> dict:
 
         energy_map = {int(item["timestamp"]): float(item["energy"]) for item in energy_curve}
 
-        model = _get_whisper_model()
-        result = model.transcribe(audio_path)
+        result = whisper_model.transcribe(audio_path)
 
         raw_segments = result.get("segments", [])
 

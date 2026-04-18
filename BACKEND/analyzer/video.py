@@ -68,6 +68,14 @@ def analyze_video(video_path: str, job_id: str) -> dict:
                 else:
                     merged_ranges.append(scene)
 
+            # Merge ultra-short opening scene into next scene to avoid noisy 0.xs first cuts.
+            if len(merged_ranges) > 1:
+                first_scene = merged_ranges[0]
+                first_seconds = (first_scene["end_frame"] - first_scene["start_frame"] + 1) / fps
+                if first_seconds < 1.0:
+                    merged_ranges[1]["start_frame"] = first_scene["start_frame"]
+                    merged_ranges.pop(0)
+
             if not merged_ranges:
                 merged_ranges = [
                     {

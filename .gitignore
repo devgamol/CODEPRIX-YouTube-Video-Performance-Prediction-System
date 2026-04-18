@@ -35,3 +35,4 @@ FRONTEND/.vite/
 .DS_Store
 Thumbs.db
 BACKEND/KI_HONDA_PYAAR.mp4
+BACKEND/.env

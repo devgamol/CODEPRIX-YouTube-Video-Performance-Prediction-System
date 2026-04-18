@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { getJobStatus } from '../api/client';
 
 const stages = [
-  'Extracting frames...',
-  'Analyzing motion...',
-  'Transcribing audio...',
+  'Preprocessing video...',
+  'Analyzing video and audio...',
+  'Extracting visual features...',
   'Computing retention curve...',
-  'Generating AI suggestions...'
+  'Generating AI suggestions...',
+  'Finalizing...'
 ];
 
 export default function ProgressPoller({ jobId, onComplete, onError }) {
@@ -20,9 +21,10 @@ export default function ProgressPoller({ jobId, onComplete, onError }) {
         const status = await getJobStatus(jobId);
         if (status.status === 'done') {
           clearInterval(interval);
+          setCurrentStage(stages.length - 1);
           setProgress(100);
           setTimeout(() => onComplete(status.result), 500);
-        } else if (status.status === 'error') {
+        } else if (status.status === 'failed') {
           clearInterval(interval);
           setError(true);
         } else {
