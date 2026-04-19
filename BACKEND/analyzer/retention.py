@@ -275,6 +275,38 @@ def _short_form_scores(total_duration: float, retention_curve, motion_lookup, en
     }
 
 
+def build_heatmap(retention_curve, bucket_size=3):
+    heatmap = []
+    bucket = []
+
+    for point in retention_curve:
+        bucket.append(point["retention"])
+
+        if len(bucket) == bucket_size:
+            avg = sum(bucket) / len(bucket)
+
+            if avg > 80:
+                level = "high"
+            elif avg > 60:
+                level = "medium"
+            elif avg > 40:
+                level = "low"
+            else:
+                level = "very_low"
+
+            heatmap.append(
+                {
+                    "time": point["time"],
+                    "value": avg,
+                    "level": level,
+                }
+            )
+
+            bucket = []
+
+    return heatmap
+
+
 def compute_retention_analysis(video_data, audio_data, features=None):
     total_duration = float(video_data.get("duration", 0.0))
     duration = int(total_duration)
@@ -598,6 +630,7 @@ def compute_retention_analysis(video_data, audio_data, features=None):
 
     return {
         "retention_curve": retention_curve,
+        "heatmap": build_heatmap(retention_curve),
         "weak_segments": weak_segments,
         "strong_segments": strong_segments,
         "vpq_score": vpq_score,

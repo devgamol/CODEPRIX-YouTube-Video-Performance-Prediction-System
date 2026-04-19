@@ -1,12 +1,14 @@
 import os
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager
 from threading import Lock
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from analyzer.audio import analyze_audio
@@ -16,6 +18,7 @@ from analyzer.suggestions import generate_suggestions
 from analyzer.video import analyze_video
 from config import DEMO_MODE
 from db import create_job, get_job, init_db, update_job
+from utils.pdf import generate_pdf
 
 MAX_CONCURRENT_JOBS = 3
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
@@ -311,3 +314,12 @@ def get_status(job_id: str):
         response["partial_result"] = partial
 
     return response
+
+
+@app.post("/export")
+def export_pdf(result: dict):
+    file_path = f"report_{uuid.uuid4()}.pdf"
+
+    generate_pdf(result, file_path)
+
+    return FileResponse(file_path, media_type="application/pdf", filename="report.pdf")
