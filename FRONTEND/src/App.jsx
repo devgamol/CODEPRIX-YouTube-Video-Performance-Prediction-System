@@ -89,8 +89,16 @@ function normalizeResult(rawResult) {
     timestamp_start: Number(segment.start) || 0,
     timestamp_end: Number(segment.end) || 0,
     issue: 'Predicted audience drop-off',
+    reason: 'This segment is flagged as a weak point in retention behavior.',
     fix: 'Tighten pacing and add stronger visual or audio variation in this section.',
     priority: segment.severity === 'critical' || segment.severity === 'severe' ? 'High' : 'Medium',
+  }));
+  const normalizedSuggestions = (suggestions.length ? suggestions : fallbackSuggestions).map((item) => ({
+    ...item,
+    reason:
+      typeof item?.reason === 'string' && item.reason.trim()
+        ? item.reason
+        : 'This segment is flagged as a weak point in retention behavior.',
   }));
 
   return {
@@ -105,7 +113,7 @@ function normalizeResult(rawResult) {
       start: Number(segment.start) || 0,
       end: Number(segment.end) || 0,
     })),
-    suggestions: suggestions.length ? suggestions : fallbackSuggestions,
+    suggestions: normalizedSuggestions,
     motion_data: motionData,
   };
 }
@@ -233,7 +241,6 @@ function App() {
         <div className="relative z-10">
           {renderHeader()}
           <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-            {/* Hero Section */}
             <section className="mb-12 grid gap-6 sm:gap-8 lg:grid-cols-[1.4fr_0.6fr]">
               <div className="rounded-2xl sm:rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-10 shadow-2xl backdrop-blur-xl">
                 <div className="space-y-4 sm:space-y-6">
@@ -263,7 +270,6 @@ function App() {
               </div>
             </section>
 
-            {/* Charts Section */}
             <section className="mb-12 grid gap-6 sm:gap-8 lg:grid-cols-[1.2fr_0.8fr]">
               <div className="rounded-2xl sm:rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-10 shadow-2xl backdrop-blur-xl">
                 <div className="mb-6 sm:mb-8">
@@ -302,7 +308,6 @@ function App() {
               </div>
             </section>
 
-            {/* Weak Segments & Suggestions */}
             <section className="grid gap-6 sm:gap-8 lg:grid-cols-2">
               <div className="rounded-2xl sm:rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-10 shadow-2xl backdrop-blur-xl">
                 <h2 className="mb-6 sm:mb-8 text-lg sm:text-xl lg:text-2xl font-bold text-white">Weak Segments</h2>
