@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import { uploadVideo } from '../api/client';
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv'];
@@ -22,26 +22,14 @@ export default function Upload({ onUploadSuccess }) {
     setUploadedJobId(null);
     setError('');
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await axios.post('http://localhost:8000/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          const total = progressEvent.total || file.size || 1;
-          const percent = Math.round((progressEvent.loaded * 100) / total);
-          setUploadProgress(Math.max(0, Math.min(100, percent)));
-        },
-      });
-
+      setUploadProgress(20);
+      const response = await uploadVideo(file);
       setUploadProgress(100);
-      setUploadedJobId(response.data?.job_id || null);
-    } catch {
+      setUploadedJobId(response?.job_id || null);
+    } catch (err) {
       setUploadProgress(0);
       setUploadedJobId(null);
-      setError('Upload failed. Please try again.');
+      setError(err?.message || 'Upload failed. Please try again.');
     } finally {
       setIsUploading(false);
     }

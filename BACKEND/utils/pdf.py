@@ -1,9 +1,11 @@
+from io import BytesIO
+
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 
 
-def generate_pdf(data, file_path):
-    doc = SimpleDocTemplate(file_path)
+def _build_pdf(data, output):
+    doc = SimpleDocTemplate(output)
     styles = getSampleStyleSheet()
 
     elements = []
@@ -23,3 +25,15 @@ def generate_pdf(data, file_path):
         elements.append(Spacer(1, 6))
 
     doc.build(elements)
+
+
+def generate_pdf(data, file_path):
+    _build_pdf(data, file_path)
+
+
+def generate_pdf_bytes(data):
+    buffer = BytesIO()
+    _build_pdf(data, buffer)
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
