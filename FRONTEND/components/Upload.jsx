@@ -80,7 +80,7 @@ export default function Upload({ onUploadSuccess }) {
         }}
         onDragLeave={() => setIsDragOver(false)}
       >
-        <div className="flex min-h-[240px] flex-col items-center justify-center px-6 py-14 text-center sm:min-h-[280px]">
+        <div className="flex min-h-[220px] flex-col items-center justify-center px-6 py-12 text-center sm:min-h-[260px]">
           <div className="mb-7 flex h-20 w-20 items-center justify-center rounded-2xl bg-[#191436]">
             <svg
               className="h-10 w-10 text-[#7c3aed]"
@@ -96,10 +96,10 @@ export default function Upload({ onUploadSuccess }) {
               <path d="M12 5v11" />
             </svg>
           </div>
-          <p className="text-3xl font-semibold leading-tight text-white sm:text-[42px]">
+          <p className="text-2xl font-semibold leading-tight text-white sm:text-4xl">
             {selectedFile ? selectedFile.name : 'Drag & drop your video'}
           </p>
-          <p className="mt-2.5 text-base text-[#9aa4b2] sm:text-[30px]">
+          <p className="mt-2.5 text-sm text-[#9aa4b2] sm:text-lg">
             {selectedFile ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB selected` : 'or click to browse (MP4, WebM, MOV - up to 2GB)'}
           </p>
         </div>
