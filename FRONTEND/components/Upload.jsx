@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { uploadVideo } from '../api/client';
 
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv'];
+
 export default function Upload({ onUploadSuccess }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -8,8 +11,16 @@ export default function Upload({ onUploadSuccess }) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleFileSelect = (file) => {
-    if (!file.type.startsWith('video/')) {
+    const lowerName = String(file.name || '').toLowerCase();
+    const hasAllowedExt = ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    const mimeLooksVideo = String(file.type || '').startsWith('video/');
+
+    if (!mimeLooksVideo && !hasAllowedExt) {
       setError('Please select a video file.');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError('File must be smaller than 2GB.');
       return;
     }
     setSelectedFile(file);

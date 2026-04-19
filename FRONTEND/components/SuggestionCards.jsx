@@ -56,6 +56,9 @@ export default function SuggestionCards({ suggestions }) {
                     {suggestion.priority}
                   </span>
                 </div>
+                <p className="text-slate-300 text-xs sm:text-sm leading-relaxed mb-2 sm:mb-3">
+                  {suggestion.reason}
+                </p>
                 <p className="text-slate-400 text-xs sm:text-sm leading-relaxed mb-2 sm:mb-3">💡 {suggestion.fix}</p>
                 <p className="text-xs text-slate-500 font-mono">
                   {formatTime(suggestion.timestamp_start)} – {formatTime(suggestion.timestamp_end)}
