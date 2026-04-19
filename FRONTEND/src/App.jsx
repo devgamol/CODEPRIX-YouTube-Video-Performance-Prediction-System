@@ -3,9 +3,11 @@ import Upload from '../components/Upload';
 import ProgressPoller from '../components/ProgressPoller';
 import ScoreGauge from '../components/ScoreGauge';
 import RetentionChart from '../components/RetentionChart';
+import TimelineHeatmap from '../components/TimelineHeatmap';
 import WeakSegments from '../components/WeakSegments';
 import SuggestionCards from '../components/SuggestionCards';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { exportReport } from '../api/client';
 
 const mockData = {
   overall_score: 64,
@@ -55,7 +57,8 @@ const mockData = {
     { timestamp: 10, motion: 0.3 },
     { timestamp: 15, motion: 0.2 },
     { timestamp: 20, motion: 0.7 }
-  ]
+  ],
+  heatmap: []
 };
 
 function normalizeResult(rawResult) {
@@ -70,6 +73,7 @@ function normalizeResult(rawResult) {
     ? safe.suggestions
     : [];
   const retentionCurve = Array.isArray(retention.retention_curve) ? retention.retention_curve : [];
+  const heatmap = Array.isArray(retention.heatmap) ? retention.heatmap : [];
   const motionData = Array.isArray(safe.video?.motion_scores)
     ? safe.video.motion_scores.map((item) => ({
         timestamp: Number(item.timestamp) || 0,
@@ -115,6 +119,11 @@ function normalizeResult(rawResult) {
     })),
     suggestions: normalizedSuggestions,
     motion_data: motionData,
+    heatmap: heatmap.map((item) => ({
+      time: Number(item.time) || 0,
+      value: Number(item.value) || 0,
+      level: typeof item.level === 'string' ? item.level : 'very_low',
+    })),
   };
 }
 
@@ -122,8 +131,6 @@ function App() {
   const [screen, setScreen] = useState('idle');
   const [jobId, setJobId] = useState(null);
   const [resultData, setResultData] = useState(null);
-  const [trackingJobId, setTrackingJobId] = useState('');
-  const [searchError, setSearchError] = useState('');
 
   const handleUploadSuccess = (id) => {
     setJobId(id);
@@ -140,12 +147,15 @@ function App() {
     setJobId(null);
   };
 
-  const handleTrackJob = async () => {
-    if (!trackingJobId.trim()) {
-      setSearchError('Please enter a job ID');
-      return;
-    }
-    setSearchError('');
+  const exportPDF = async () => {
+    const blob = await exportReport(resultData);
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'video-report.pdf';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   const renderHeader = () => (
@@ -182,33 +192,6 @@ function App() {
           </section>
 
           <div className="my-12 h-px bg-[#1b2434]" />
-
-          <section>
-            <h2 className="text-3xl font-semibold sm:text-[44px]" style={{ color: '#ffffff' }}>Track Previous Analysis</h2>
-            <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <input
-                type="text"
-                placeholder="Enter job ID (e.g., JOB_1234567890)"
-                value={trackingJobId}
-                onChange={(e) => {
-                  setTrackingJobId(e.target.value);
-                  setSearchError('');
-                }}
-                className="h-[56px] w-full flex-1 rounded-3xl border border-[#2b3447] bg-[#1a222f] px-5 text-[18px] text-[#e2e8f0] placeholder:text-[#6f7a8e] focus:border-[#4d5e7e] focus:outline-none"
-              />
-              <button
-                onClick={handleTrackJob}
-                className="inline-flex h-[56px] w-full items-center justify-center gap-2 whitespace-nowrap rounded-3xl bg-gradient-to-r from-[#7436f3] to-[#5f22dc] px-6 text-[18px] font-semibold text-white shadow-[0_12px_30px_rgba(116,54,243,0.4)] sm:w-[150px] sm:shrink-0"
-              >
-                <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="M21 21l-4.35-4.35" />
-                </svg>
-                <span className="leading-none">Search</span>
-              </button>
-            </div>
-            {searchError && <p className="mt-3 text-sm text-red-300">{searchError}</p>}
-          </section>
         </main>
       </div>
     );
@@ -308,6 +291,10 @@ function App() {
               </div>
             </section>
 
+            <section className="mb-12">
+              <TimelineHeatmap heatmap={data.heatmap || []} />
+            </section>
+
             <section className="grid gap-6 sm:gap-8 lg:grid-cols-2">
               <div className="rounded-2xl sm:rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-10 shadow-2xl backdrop-blur-xl">
                 <h2 className="mb-6 sm:mb-8 text-lg sm:text-xl lg:text-2xl font-bold text-white">Weak Segments</h2>
@@ -319,18 +306,28 @@ function App() {
                     <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-white">AI Suggestions</h2>
                     <p className="mt-2 text-xs sm:text-sm text-slate-400">Priority-ordered recommendations.</p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setScreen('idle');
-                      setJobId(null);
-                    }}
-                    className="rounded-lg bg-gradient-to-r from-purple-500 to-blue-600 px-4 py-2 text-xs sm:text-sm font-semibold text-white shadow-lg shadow-purple-500/40 transition hover:opacity-95 whitespace-nowrap flex-shrink-0"
-                  >
-                    Analyze Another
-                  </button>
                 </div>
                 <SuggestionCards suggestions={data.suggestions} />
               </div>
+            </section>
+
+            <section className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
+              <button
+                onClick={() => {
+                  setScreen('idle');
+                  setJobId(null);
+                }}
+                className="inline-flex h-14 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-6 text-base font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition hover:bg-white/10"
+              >
+                Analyze Another Video
+              </button>
+              <button
+                onClick={exportPDF}
+                disabled={!resultData}
+                className="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#7c3aed] to-[#3b82f6] px-6 text-base font-semibold text-white shadow-[0_14px_34px_rgba(59,130,246,0.35)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Export Report
+              </button>
             </section>
           </main>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { uploadVideo } from '../api/client';
+import axios from 'axios';
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv'];
@@ -7,8 +7,45 @@ const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.webm', '.mkv'];
 export default function Upload({ onUploadSuccess }) {
   const [selectedFile, setSelectedFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedJobId, setUploadedJobId] = useState(null);
   const [error, setError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+
+  const startUpload = async (file) => {
+    if (!file || isUploading) {
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadedJobId(null);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await axios.post('http://localhost:8000/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress: (progressEvent) => {
+          const total = progressEvent.total || file.size || 1;
+          const percent = Math.round((progressEvent.loaded * 100) / total);
+          setUploadProgress(Math.max(0, Math.min(100, percent)));
+        },
+      });
+
+      setUploadProgress(100);
+      setUploadedJobId(response.data?.job_id || null);
+    } catch {
+      setUploadProgress(0);
+      setUploadedJobId(null);
+      setError('Upload failed. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const handleFileSelect = (file) => {
     const lowerName = String(file.name || '').toLowerCase();
@@ -24,7 +61,10 @@ export default function Upload({ onUploadSuccess }) {
       return;
     }
     setSelectedFile(file);
+    setUploadProgress(0);
+    setUploadedJobId(null);
     setError('');
+    startUpload(file);
   };
 
   const handleDrop = (e) => {
@@ -33,23 +73,6 @@ export default function Upload({ onUploadSuccess }) {
     const file = e.dataTransfer.files[0];
     if (file) {
       handleFileSelect(file);
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!selectedFile || isUploading) {
-      return;
-    }
-
-    setIsUploading(true);
-    setError('');
-    try {
-      const response = await uploadVideo(selectedFile);
-      onUploadSuccess?.(response.job_id);
-    } catch {
-      setError('Upload failed. Please try again.');
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -99,6 +122,7 @@ export default function Upload({ onUploadSuccess }) {
         type="file"
         accept="video/*"
         className="hidden"
+        disabled={isUploading}
         onChange={(e) => {
           if (e.target.files[0]) {
             handleFileSelect(e.target.files[0]);
@@ -107,13 +131,25 @@ export default function Upload({ onUploadSuccess }) {
       />
 
       {selectedFile && (
-        <button
-          onClick={handleUpload}
-          disabled={isUploading}
-          className="inline-flex h-14 min-w-[180px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#5f2df5] to-[#6527e6] px-7 text-base font-semibold text-white shadow-[0_12px_30px_rgba(101,39,230,0.38)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isUploading ? 'Uploading...' : 'Start Analysis'}
-        </button>
+        <div className="w-full rounded-2xl border border-[#243041] bg-[#071326] p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-[#b2bfd1]">Upload Progress</p>
+            <p className="text-sm font-semibold text-[#dbe5f3]">{uploadProgress}%</p>
+          </div>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-[#111d32] ring-1 ring-[#2a3a59]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#5f2df5] via-[#6d33f8] to-[#7d5dff] transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          <button
+            onClick={() => onUploadSuccess?.(uploadedJobId)}
+            disabled={isUploading || uploadProgress !== 100 || !uploadedJobId}
+            className="mx-auto mt-4 flex h-14 w-full max-w-[260px] items-center justify-center rounded-2xl bg-gradient-to-r from-[#5f2df5] to-[#6527e6] px-7 text-base font-semibold text-white shadow-[0_12px_30px_rgba(101,39,230,0.38)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isUploading ? 'Uploading...' : 'Analyze Video'}
+          </button>
+        </div>
       )}
 
       {error && (

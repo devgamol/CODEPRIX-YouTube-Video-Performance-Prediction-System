@@ -21,3 +21,13 @@ export async function getJobStatus(job_id) {
   const response = await api.get(`/status/${job_id}`);
   return response.data;
 }
+
+export async function exportReport(resultData) {
+  const response = await api.post("/export", resultData, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    responseType: "blob",
+  });
+  return response.data;
+}
