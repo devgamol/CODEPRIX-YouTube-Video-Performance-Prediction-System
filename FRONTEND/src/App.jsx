@@ -175,7 +175,7 @@ function App() {
           </div>
           <div>
             <p className="text-3xl font-bold leading-none text-[#615bff] sm:text-4xl">Video Insight AI</p>
-            <p className="mt-1.5 text-base text-[#9aa4b2] sm:text-[30px]">AI-Powered Performance Analysis</p>
+            <p className="mt-1.5 text-sm text-[#9aa4b2] sm:text-lg">AI-Powered Performance Analysis</p>
           </div>
         </div>
         <button
@@ -194,6 +194,14 @@ function App() {
     </header>
   );
 
+  const renderFooter = () => (
+    <footer className="border-t border-[#20283a]">
+      <div className="mx-auto max-w-[1160px] px-6 py-10 text-center text-sm text-[#9aa4b2] sm:px-8 sm:text-base">
+        Video Insight AI © 2026 • Powered by advanced AI analysis • Made for creators
+      </div>
+    </footer>
+  );
+
   if (!token) {
     return <Auth setToken={setToken} />;
   }
@@ -204,8 +212,8 @@ function App() {
         {renderHeader()}
         <main className="mx-auto max-w-[1160px] px-6 pb-10 pt-10 sm:px-8 sm:pt-14">
           <section>
-            <h1 className="text-center text-4xl font-semibold sm:text-6xl" style={{ color: '#ffffff' }}>Analyze Your Video</h1>
-            <p className="mx-auto mt-4 max-w-[980px] text-center text-lg sm:text-[34px]" style={{ color: '#a7b2c1' }}>
+            <h1 className="text-center text-3xl font-semibold sm:text-5xl" style={{ color: '#ffffff' }}>Analyze Your Video</h1>
+            <p className="mx-auto mt-4 max-w-[980px] text-center text-base sm:text-xl" style={{ color: '#a7b2c1' }}>
               Get AI-powered insights on viewer retention, engagement patterns, and optimization tips.
             </p>
             <div className="mt-8">
@@ -215,6 +223,7 @@ function App() {
 
           <div className="my-12 h-px bg-[#1b2434]" />
         </main>
+        {renderFooter()}
       </div>
     );
   }
@@ -230,6 +239,7 @@ function App() {
           <main className="mx-auto flex min-h-[calc(100vh-80px)] max-w-3xl items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-24">
             <ProgressPoller jobId={jobId} onComplete={handleProcessingComplete} onError={handleError} />
           </main>
+          {renderFooter()}
         </div>
       </div>
     );
@@ -352,6 +362,7 @@ function App() {
               </button>
             </section>
           </main>
+          {renderFooter()}
         </div>
       </div>
     );
