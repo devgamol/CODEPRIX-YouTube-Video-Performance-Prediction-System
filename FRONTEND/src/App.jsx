@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Upload from '../components/Upload';
 import ProgressPoller from '../components/ProgressPoller';
 import ScoreGauge from '../components/ScoreGauge';
@@ -6,8 +6,9 @@ import RetentionChart from '../components/RetentionChart';
 import TimelineHeatmap from '../components/TimelineHeatmap';
 import WeakSegments from '../components/WeakSegments';
 import SuggestionCards from '../components/SuggestionCards';
+import Auth from '../components/Auth';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
-import { exportReport } from '../api/client';
+import { exportReport, setAuthToken } from '../api/client';
 
 const mockData = {
   overall_score: 64,
@@ -128,9 +129,14 @@ function normalizeResult(rawResult) {
 }
 
 function App() {
+  const [token, setToken] = useState(localStorage.getItem('token'));
   const [screen, setScreen] = useState('idle');
   const [jobId, setJobId] = useState(null);
   const [resultData, setResultData] = useState(null);
+
+  useEffect(() => {
+    setAuthToken(token);
+  }, [token]);
 
   const handleUploadSuccess = (id) => {
     setJobId(id);
@@ -160,7 +166,7 @@ function App() {
 
   const renderHeader = () => (
     <header className="border-b border-[#20283a] bg-gradient-to-r from-[#171c28] via-[#0f1627] to-[#070d19]">
-      <div className="mx-auto flex max-w-[1160px] items-center px-6 py-6 sm:px-8">
+      <div className="mx-auto flex max-w-[1160px] items-center justify-between px-6 py-6 sm:px-8">
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-[#5857ff] to-[#5b8cff] shadow-[0_10px_24px_rgba(88,87,255,0.35)]">
             <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
@@ -172,9 +178,25 @@ function App() {
             <p className="mt-1.5 text-base text-[#9aa4b2] sm:text-[30px]">AI-Powered Performance Analysis</p>
           </div>
         </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem('token');
+            setToken(null);
+            setScreen('idle');
+            setJobId(null);
+            setResultData(null);
+          }}
+          className="inline-flex h-12 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-5 text-base font-semibold text-white transition hover:bg-white/10"
+        >
+          Logout
+        </button>
       </div>
     </header>
   );
+
+  if (!token) {
+    return <Auth setToken={setToken} />;
+  }
 
   if (screen === 'idle') {
     return (

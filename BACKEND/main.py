@@ -1,15 +1,15 @@
 import os
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager
 from threading import Lock
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from analyzer.audio import analyze_audio
 from analyzer.features import analyze_features
@@ -18,7 +18,8 @@ from analyzer.suggestions import generate_suggestions
 from analyzer.video import analyze_video
 from config import DEMO_MODE
 from db import create_job, get_job, init_db, update_job
-from utils.pdf import generate_pdf
+from utils.auth import create_token, decode_token, hash_password, verify_password
+from utils.pdf import generate_pdf_bytes
 
 MAX_CONCURRENT_JOBS = 3
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
@@ -31,6 +32,12 @@ _JOB_START_TIMES = {}
 _JOB_END_TIMES = {}
 _JOB_PARTIAL_RESULTS = {}
 jobs = {}
+users = {}  # simple in-memory (replace later with DB)
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
 
 
 @asynccontextmanager
@@ -47,6 +54,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_user(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="No token")
+
+    parts = authorization.split(" ")
+    if len(parts) != 2:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    token = parts[1]
+    try:
+        data = decode_token(token)
+        return data["email"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 def _set_partial_result(job_id: str, data: dict) -> None:
@@ -196,8 +219,31 @@ def health():
     return {"status": "ok", "message": "backend running"}
 
 
+@app.post("/signup")
+def signup(payload: AuthRequest):
+    if payload.email in users:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    users[payload.email] = {"password": hash_password(payload.password)}
+    return {"success": True, "message": "Signup successful"}
+
+
+@app.post("/login")
+def login(payload: AuthRequest):
+    user = users.get(payload.email)
+    if not user or not verify_password(payload.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    token = create_token(payload.email)
+    return {"token": token}
+
+
 @app.post("/upload")
-async def upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_user),
+):
     global active_jobs
 
     if not file.content_type or not file.content_type.startswith("video/"):
@@ -279,7 +325,7 @@ async def upload(background_tasks: BackgroundTasks, file: UploadFile = File(...)
 
 
 @app.get("/status/{job_id}")
-def get_status(job_id: str):
+def get_status(job_id: str, current_user: str = Depends(get_user)):
     with _JOB_LOCK:
         job = jobs.get(job_id)
         start_time = _JOB_START_TIMES.get(job_id)
@@ -317,9 +363,10 @@ def get_status(job_id: str):
 
 
 @app.post("/export")
-def export_pdf(result: dict):
-    file_path = f"report_{uuid.uuid4()}.pdf"
-
-    generate_pdf(result, file_path)
-
-    return FileResponse(file_path, media_type="application/pdf", filename="report.pdf")
+def export_pdf(result: dict, current_user: str = Depends(get_user)):
+    pdf_bytes = generate_pdf_bytes(result)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="report.pdf"'},
+    )
