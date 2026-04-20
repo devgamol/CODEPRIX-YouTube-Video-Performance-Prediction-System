@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel
 
 from analyzer.audio import analyze_audio
@@ -17,7 +18,7 @@ from analyzer.retention import compute_retention_analysis
 from analyzer.suggestions import generate_suggestions
 from analyzer.video import analyze_video
 from config import DEMO_MODE
-from db import create_job, get_job, init_db, update_job
+from db import create_job, get_job, init_db, update_job, users_collection
 from utils.auth import create_token, decode_token, hash_password, verify_password
 from utils.pdf import generate_pdf_bytes
 
@@ -32,7 +33,6 @@ _JOB_START_TIMES = {}
 _JOB_END_TIMES = {}
 _JOB_PARTIAL_RESULTS = {}
 jobs = {}
-users = {}  # simple in-memory (replace later with DB)
 
 
 class AuthRequest(BaseModel):
@@ -221,17 +221,32 @@ def health():
 
 @app.post("/signup")
 def signup(payload: AuthRequest):
-    if payload.email in users:
+    if users_collection is None:
+        raise HTTPException(status_code=500, detail="MongoDB not configured")
+
+    if users_collection.find_one({"email": payload.email}):
         raise HTTPException(status_code=400, detail="User already exists")
 
-    users[payload.email] = {"password": hash_password(payload.password)}
+    try:
+        users_collection.insert_one(
+            {
+                "email": payload.email,
+                "password": hash_password(payload.password),
+            }
+        )
+    except DuplicateKeyError:
+        raise HTTPException(status_code=400, detail="User already exists")
+
     return {"success": True, "message": "Signup successful"}
 
 
 @app.post("/login")
 def login(payload: AuthRequest):
-    user = users.get(payload.email)
-    if not user or not verify_password(payload.password, user["password"]):
+    if users_collection is None:
+        raise HTTPException(status_code=500, detail="MongoDB not configured")
+
+    user = users_collection.find_one({"email": payload.email})
+    if not user or not verify_password(payload.password, user.get("password", "")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_token(payload.email)
