@@ -7,23 +7,64 @@ except ImportError:
 
 import librosa
 import numpy as np
-import whisper
 
 from config import NO_SPEECH_PROB_THRESHOLD, WHISPER_MODEL
 
-try:
-    import torch
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-except Exception:
-    device = "cpu"
+USE_WHISPER = os.getenv("USE_WHISPER", "true").lower() == "true"
 
-try:
-    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
-except Exception:
+if USE_WHISPER:
     device = "cpu"
-    whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+    try:
+        import whisper
+    except Exception:
+        USE_WHISPER = False
 
-print(f"[Audio] Whisper using device: {device}")
+whisper_model = None
+if USE_WHISPER:
+    try:
+        import torch
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        device = "cpu"
+
+    try:
+        whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+    except Exception:
+        device = "cpu"
+        whisper_model = whisper.load_model(WHISPER_MODEL, device=device)
+
+
+def compute_audio_energy(audio_path: str):
+    y, sr = librosa.load(audio_path, sr=16000, mono=True)
+    audio_duration = float(librosa.get_duration(y=y, sr=sr))
+
+    rms = librosa.feature.rms(y=y)[0]
+    frame_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr)
+
+    per_second = {}
+    for i, value in enumerate(rms):
+        second = int(frame_times[i])
+        per_second.setdefault(second, []).append(float(value))
+
+    raw_curve = []
+    for second in sorted(per_second.keys()):
+        avg_energy = float(np.mean(per_second[second]))
+        raw_curve.append({"timestamp": float(second), "energy": avg_energy})
+
+    max_energy = max((item["energy"] for item in raw_curve), default=0.0)
+    if max_energy > 0:
+        energy_curve = [
+            {"timestamp": item["timestamp"], "energy": item["energy"] / max_energy}
+            for item in raw_curve
+        ]
+    else:
+        energy_curve = [
+            {"timestamp": item["timestamp"], "energy": 0.0}
+            for item in raw_curve
+        ]
+
+    return energy_curve, audio_duration
 
 
 def analyze_audio(video_path: str, job_id: str) -> dict:
@@ -48,72 +89,51 @@ def analyze_audio(video_path: str, job_id: str) -> dict:
         )
         clip.close()
 
-        y, sr = librosa.load(audio_path, sr=16000, mono=True)
-        audio_duration = float(librosa.get_duration(y=y, sr=sr))
-
-        rms = librosa.feature.rms(y=y)[0]
-        frame_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr)
-
-        per_second = {}
-        for i, value in enumerate(rms):
-            second = int(frame_times[i])
-            per_second.setdefault(second, []).append(float(value))
-
-        raw_curve = []
-        for second in sorted(per_second.keys()):
-            avg_energy = float(np.mean(per_second[second]))
-            raw_curve.append({"timestamp": float(second), "energy": avg_energy})
-
-        max_energy = max((item["energy"] for item in raw_curve), default=0.0)
-        if max_energy > 0:
-            energy_curve = [
-                {"timestamp": item["timestamp"], "energy": item["energy"] / max_energy}
-                for item in raw_curve
-            ]
-        else:
-            energy_curve = [
-                {"timestamp": item["timestamp"], "energy": 0.0}
-                for item in raw_curve
-            ]
+        audio_energy, audio_duration = compute_audio_energy(audio_path)
+        energy_curve = audio_energy
 
         energy_map = {int(item["timestamp"]): float(item["energy"]) for item in energy_curve}
 
-        result = whisper_model.transcribe(audio_path)
+        if USE_WHISPER and whisper_model is not None:
+            result = whisper_model.transcribe(audio_path)
+            raw_segments = result.get("segments", [])
 
-        raw_segments = result.get("segments", [])
+            transcription = []
+            for segment in raw_segments:
+                start = float(segment.get("start", 0.0))
+                end = float(segment.get("end", 0.0))
+                text = str(segment.get("text", "")).strip()
+                no_speech_prob = float(segment.get("no_speech_prob", 0.0))
+                duration = end - start
 
-        transcription = []
-        for segment in raw_segments:
-            start = float(segment.get("start", 0.0))
-            end = float(segment.get("end", 0.0))
-            text = str(segment.get("text", "")).strip()
-            no_speech_prob = float(segment.get("no_speech_prob", 0.0))
-            duration = end - start
+                if not text:
+                    continue
+                if duration < 0.3:
+                    continue
+                if no_speech_prob > NO_SPEECH_PROB_THRESHOLD:
+                    continue
 
-            if not text:
-                continue
-            if duration < 0.3:
-                continue
-            if no_speech_prob > NO_SPEECH_PROB_THRESHOLD:
-                continue
+                start_sec = int(start)
+                end_sec = int(end)
+                second_values = [energy_map[s] for s in range(start_sec, end_sec + 1) if s in energy_map]
+                if second_values:
+                    energy_level = float(np.mean(second_values))
+                else:
+                    energy_level = 0.0
 
-            start_sec = int(start)
-            end_sec = int(end)
-            second_values = [energy_map[s] for s in range(start_sec, end_sec + 1) if s in energy_map]
-            if second_values:
-                energy_level = float(np.mean(second_values))
-            else:
-                energy_level = 0.0
-
-            transcription.append(
-                {
-                    "start": start,
-                    "end": end,
-                    "text": text,
-                    "no_speech_prob": no_speech_prob,
-                    "energy_level": energy_level,
-                }
-            )
+                transcription.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "text": text,
+                        "no_speech_prob": no_speech_prob,
+                        "energy_level": energy_level,
+                    }
+                )
+        else:
+            # Render-safe fallback: skip Whisper and use lightweight energy features only.
+            raw_segments = []
+            transcription = []
 
         silence_map = {}
         max_second = int(np.floor(audio_duration))
@@ -166,6 +186,7 @@ def analyze_audio(video_path: str, job_id: str) -> dict:
             "energy_curve": energy_curve,
             "silence_map": silence_map,
             "speech_stats": speech_stats,
+            "audio_energy": audio_energy,
         }
     except Exception:
         return {"transcription": [], "energy_curve": [], "silence_map": {}, "speech_stats": {}}

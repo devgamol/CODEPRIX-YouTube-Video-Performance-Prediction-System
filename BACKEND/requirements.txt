@@ -7,7 +7,6 @@ numpy==1.26.4
 opencv-python==4.10.0.84
 moviepy==1.0.3
 librosa==0.10.2.post1
-openai-whisper==20240930
 groq==0.31.0
 python-dotenv==1.0.1
 reportlab
