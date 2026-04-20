@@ -70,8 +70,7 @@ ________________________________________________________________________________
 ### Environment & Utilities
 - python-dotenv
 
-Here is the **complete Installation section in proper Markdown format**, ready to paste directly into your README:
-
+---
 
 ## Installation
 
