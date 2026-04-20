@@ -11,3 +11,4 @@ python-dotenv==1.0.1
 reportlab
 bcrypt==5.0.0
 pyjwt==2.12.1
+pymongo==4.16.0

@@ -1,11 +1,28 @@
 import json
 import sqlite3
+import os
 from typing import Any, Dict, Optional
+
+from dotenv import load_dotenv
+from pymongo import MongoClient
 
 DB_FILE = "jobs.db"
 
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 conn.row_factory = sqlite3.Row
+
+load_dotenv()
+
+_mongo_uri = os.getenv("MONGO_URI")
+_db_name = os.getenv("DB_NAME")
+
+if _mongo_uri and _db_name:
+    mongo_client = MongoClient(_mongo_uri)
+    mongo_db = mongo_client[_db_name]
+    users_collection = mongo_db["users"]
+    users_collection.create_index("email", unique=True)
+else:
+    users_collection = None
 
 
 def init_db() -> None:
